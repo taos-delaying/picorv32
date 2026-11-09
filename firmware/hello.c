@@ -6,9 +6,15 @@
 // means.
 
 #include "firmware.h"
+#include "fft32_q15.h"
 
 void hello(void)
 {
-	print_str("hello world\n");
+	print_str("PicoRV32 software FFT test\n");
+	if (fft32_q15_demo() != 0) {
+		/* Stop before start.S can report the normal tests-passed marker. */
+		__asm__ volatile ("ebreak");
+		for (;;) { }
+	}
 }
 

@@ -13,10 +13,29 @@ VVP = vvp$(ICARUS_SUFFIX)
 
 TEST_OBJS = $(addsuffix .o,$(basename $(wildcard tests/*.S)))
 FIRMWARE_OBJS = firmware/start.o firmware/irq.o firmware/print.o firmware/hello.o firmware/sieve.o firmware/multest.o firmware/stats.o
+FIRMWARE_OBJS += firmware/fft32_q15.o
 GCC_WARNS  = -Werror -Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings
 GCC_WARNS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes -pedantic # -Wconversion
 TOOLCHAIN_PREFIX = $(RISCV_GNU_TOOLCHAIN_INSTALL_PREFIX)i/bin/riscv32-unknown-elf-
 COMPRESSED_ISA = C
+
+# Build NMSIS from scalar C for this CPU; do not use DSP/RVV prebuilt libraries.
+NMSIS_DIR = third_party/nmsis/NMSIS
+NMSIS_INCLUDES = -isystem $(NMSIS_DIR)/DSP/Include -isystem $(NMSIS_DIR)/Core/Include
+NMSIS_SOURCES = $(addprefix $(NMSIS_DIR)/DSP/Source/, \
+	TransformFunctions/riscv_cfft_init_q15.c \
+	TransformFunctions/riscv_cfft_q15.c \
+	TransformFunctions/riscv_cfft_radix4_q15.c \
+	TransformFunctions/riscv_bitreversal2.c \
+	TransformFunctions/riscv_bitreversal.c \
+	CommonTables/riscv_const_structs.c \
+	CommonTables/riscv_common_tables.c)
+NMSIS_OBJS = $(patsubst $(NMSIS_DIR)/%.c,build/nmsis/%.o,$(NMSIS_SOURCES))
+NMSIS_HEADERS = $(wildcard $(NMSIS_DIR)/DSP/Include/*.h $(NMSIS_DIR)/DSP/Include/dsp/*.h $(NMSIS_DIR)/Core/Include/*.h)
+FFT_ARCH_FLAGS = -mabi=ilp32 -march=rv32im$(subst C,c,$(COMPRESSED_ISA))
+# Optional extra include paths, e.g. newlib headers with a compiler-only toolchain.
+FFT_CPPFLAGS ?=
+FFT_CFLAGS = -O2 --std=c99 -ffreestanding -ffunction-sections -fdata-sections -fno-strict-aliasing
 
 # Add things like "export http_proxy=... https_proxy=..." here
 GIT_ENV = true
@@ -106,10 +125,10 @@ firmware/firmware.bin: firmware/firmware.elf
 	$(TOOLCHAIN_PREFIX)objcopy -O binary $< $@
 	chmod -x $@
 
-firmware/firmware.elf: $(FIRMWARE_OBJS) $(TEST_OBJS) firmware/sections.lds
+firmware/firmware.elf: $(FIRMWARE_OBJS) $(TEST_OBJS) $(NMSIS_OBJS) firmware/sections.lds
 	$(TOOLCHAIN_PREFIX)gcc -Os -mabi=ilp32 -march=rv32im$(subst C,c,$(COMPRESSED_ISA)) -ffreestanding -nostdlib -o $@ \
-		-Wl,--build-id=none,-Bstatic,-T,firmware/sections.lds,-Map,firmware/firmware.map,--strip-debug \
-		$(FIRMWARE_OBJS) $(TEST_OBJS) -lgcc
+		-Wl,--build-id=none,-Bstatic,-T,firmware/sections.lds,-Map,firmware/firmware.map,--strip-debug,--gc-sections \
+		$(FIRMWARE_OBJS) $(TEST_OBJS) $(NMSIS_OBJS) -lgcc
 	chmod -x $@
 
 firmware/start.o: firmware/start.S
@@ -117,6 +136,15 @@ firmware/start.o: firmware/start.S
 
 firmware/%.o: firmware/%.c
 	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32i$(subst C,c,$(COMPRESSED_ISA)) -Os --std=c99 $(GCC_WARNS) -ffreestanding -nostdlib -o $@ $<
+
+firmware/hello.o: firmware/fft32_q15.h
+
+firmware/fft32_q15.o: firmware/fft32_q15.c firmware/fft32_q15.h firmware/firmware.h $(NMSIS_HEADERS)
+	$(TOOLCHAIN_PREFIX)gcc $(FFT_ARCH_FLAGS) $(FFT_CPPFLAGS) $(NMSIS_INCLUDES) $(FFT_CFLAGS) $(GCC_WARNS) -c -o $@ $<
+
+build/nmsis/%.o: $(NMSIS_DIR)/%.c $(NMSIS_HEADERS)
+	mkdir -p $(dir $@)
+	$(TOOLCHAIN_PREFIX)gcc $(FFT_ARCH_FLAGS) $(FFT_CPPFLAGS) $(NMSIS_INCLUDES) $(FFT_CFLAGS) -c -o $@ $<
 
 tests/%.o: tests/%.S tests/riscv_test.h tests/test_macros.h
 	$(TOOLCHAIN_PREFIX)gcc -c -mabi=ilp32 -march=rv32im -o $@ -DTEST_FUNC_NAME=$(notdir $(basename $<)) \
@@ -175,7 +203,7 @@ toc:
 clean:
 	rm -rf riscv-gnu-toolchain-riscv32i riscv-gnu-toolchain-riscv32ic \
 		riscv-gnu-toolchain-riscv32im riscv-gnu-toolchain-riscv32imc
-	rm -vrf $(FIRMWARE_OBJS) $(TEST_OBJS) check.smt2 check.vcd synth.v synth.log \
+	rm -vrf $(FIRMWARE_OBJS) $(TEST_OBJS) $(NMSIS_OBJS) check.smt2 check.vcd synth.v synth.log \
 		firmware/firmware.elf firmware/firmware.bin firmware/firmware.hex firmware/firmware.map \
 		testbench.vvp testbench_sp.vvp testbench_synth.vvp testbench_ez.vvp \
 		testbench_rvf.vvp testbench_wb.vvp testbench.vcd testbench.trace \

@@ -16,7 +16,8 @@ MEMORY {
 SECTIONS {
 	.memory : {
 		. = 0x000000;
-		start*(.text);
+		/* Keep the reset vector when unused NMSIS tables are discarded. */
+		KEEP(firmware/start.o(.text));
 		*(.text);
 		*(*);
 		end = .;

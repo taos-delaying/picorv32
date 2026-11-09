@@ -1,0 +1,32 @@
+NMSIS source subset for PicoRV32 32-point Q15 CFFT
+
+Upstream: https://github.com/Nuclei-Software/NMSIS
+Pinned commit: dc728b988b6562868d311a2e14b5d9f8ebbd26b0
+Download date: 2026-11-06 (Asia/Shanghai)
+License: Apache-2.0; see the unmodified upstream LICENSE and file headers.
+
+This directory is a library source subset, not a complete NMSIS checkout.
+All imported upstream files are byte-for-byte unchanged. Each file was checked
+against the Git blob SHA in the recursive tree of the pinned commit.
+
+Selection:
+- Complete NMSIS/DSP/Include directory, recursively.
+- Complete NMSIS/Core/Include directory, recursively.
+- Seven DSP C files listed in MANIFEST.tsv.
+- Root LICENSE.
+
+Compile include paths relative to this directory:
+  NMSIS/DSP/Include
+  NMSIS/Core/Include
+
+Target configuration:
+  -march=rv32imc -mabi=ilp32
+  -ffunction-sections -fdata-sections
+  Link with -Wl,--gc-sections and preserve the firmware startup entry/section.
+  The CPU configuration must support M and C when using rv32imc.
+  Do not enable RISCV_MATH_DSP, RVV, Nuclei DSP extension macros, or hard-float.
+  Do not define RISCV_DSP_CONFIG_TABLES: this release explicitly rejects it.
+  Use riscv_cfft_init_32_q15 to allow unused tables to be discarded.
+
+The application must supply startup, memory placement, and output routines.
+This subset does not supply a PicoRV32 platform layer or C standard library.
